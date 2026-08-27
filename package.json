@@ -1,0 +1,41 @@
+{
+  "name": "email-studio",
+  "version": "1.0.0",
+  "description": "Self-hosted developer email IDE: create, convert, preview and send HTML emails from the browser.",
+  "private": true,
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "node client/build.js",
+    "test": "node --test test/unit.test.mjs && node test/e2e.mjs",
+    "postinstall": "node client/build.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@codemirror/lang-css": "^6.3.0",
+    "@codemirror/lang-html": "^6.4.9",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.2.0",
+    "cheerio": "^1.0.0",
+    "codemirror": "^6.0.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.4.1",
+    "express-session": "^1.18.1",
+    "googleapis": "^144.0.0",
+    "helmet": "^7.2.0",
+    "juice": "^10.0.0",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.16",
+    "prettier": "^3.3.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2",
+    "smtp-server": "^3.13.4"
+  }
+}

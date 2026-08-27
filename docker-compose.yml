@@ -1,0 +1,21 @@
+services:
+  email-studio:
+    build: .
+    image: email-studio:latest
+    container_name: email-studio
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - DATA_DIR=/app/data
+      - SESSION_SECRET=${SESSION_SECRET:?set SESSION_SECRET in .env}
+      - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY:-}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://localhost:3000}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:3000/oauth/callback}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - TRUST_PROXY=${TRUST_PROXY:-true}
+    volumes:
+      - ./data:/app/data

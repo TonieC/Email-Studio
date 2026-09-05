@@ -1,15 +1,17 @@
 import { el, clear, toast, formatBytes, confirmDialog } from '../ui.js';
 import { api } from '../api.js';
-import { state, set } from '../state.js';
+import { state } from '../state.js';
 import { loadAccounts, loadSettings } from '../actions.js';
 
 export function renderSettings() {
   const page = el('div', { class: 'page' });
   const head = el('div', { class: 'page-head' }, [el('h1', { text: 'Settings' })]);
-  const tabs = el('div', { class: 'seg', style: 'margin-bottom:16px' }, [
+  const tabs = el('div', { class: 'seg settings-tabs', style: 'margin-bottom:16px' }, [
     el('button', { class: 'active', text: 'Email Accounts', onclick: () => renderTab('accounts', content) }),
     el('button', { text: 'General', onclick: () => renderTab('general', content) }),
     el('button', { text: 'Security', onclick: () => renderTab('security', content) }),
+    el('button', { text: 'API Keys', onclick: () => renderTab('keys', content) }),
+    el('button', { text: 'Webhooks', onclick: () => renderTab('webhooks', content) }),
     el('button', { text: 'Storage', onclick: () => renderTab('storage', content) }),
     el('button', { text: 'Appearance', onclick: () => renderTab('appearance', content) }),
   ]);
@@ -24,7 +26,7 @@ function setActiveTab(which) {
   const seg = document.querySelector('.page .seg');
   if (!seg) return;
   seg.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
-  const map = { accounts: 0, general: 1, security: 2, storage: 3, appearance: 4 };
+  const map = { accounts: 0, general: 1, security: 2, keys: 3, webhooks: 4, storage: 5, appearance: 6 };
   const idx = map[which];
   if (idx !== undefined && seg.children[idx]) seg.children[idx].classList.add('active');
 }
@@ -35,6 +37,8 @@ function renderTab(tab, content) {
   if (tab === 'accounts') renderAccounts(content);
   else if (tab === 'general') renderGeneral(content);
   else if (tab === 'security') renderSecurity(content);
+  else if (tab === 'keys') renderKeys(content);
+  else if (tab === 'webhooks') renderWebhooks(content);
   else if (tab === 'storage') renderStorage(content);
   else renderAppearance(content);
 }
@@ -239,6 +243,198 @@ function renderSecurity(content) {
     } }),
   ]);
   content.append(card);
+}
+
+/* ---------- API Keys ---------- */
+
+function renderKeys(content) {
+  const list = el('div', { class: 'card-list' });
+  const hint = el('div', { class: 'hint', style: 'margin-bottom:12px;max-width:640px', text: 'REST clients can call /api/v1 with Authorization: Bearer es_… CSRF is skipped for API keys. The full key is shown only once.' });
+  const add = el('button', { class: 'btn primary', text: '+ Create API key', onclick: () => createKey(list) });
+  content.append(hint, add, list);
+  loadKeys(list);
+}
+
+async function loadKeys(list) {
+  try {
+    const res = await api.get('/api/keys');
+    clear(list);
+    if (!(res.keys || []).length) {
+      list.append(el('div', { class: 'empty-state', text: 'No API keys yet.' }));
+      return;
+    }
+    for (const k of res.keys) {
+      list.append(el('div', { class: 'card-list-item', style: 'cursor:default' }, [
+        el('div', { class: 'body' }, [
+          el('div', { class: 'name', text: k.name }),
+          el('div', { class: 'meta', text: `${k.key_prefix}… · created ${new Date(k.created_at).toLocaleString()}${k.last_used_at ? ' · last used ' + new Date(k.last_used_at).toLocaleString() : ''}` }),
+        ]),
+        el('div', { class: 'actions' }, [
+          el('button', { class: 'btn danger', text: 'Revoke', onclick: async () => {
+            const ok = await confirmDialog('Revoke API key', `Revoke "${k.name}"? This cannot be undone.`);
+            if (!ok) return;
+            try {
+              await api.del(`/api/keys/${k.id}`);
+              toast('API key revoked', 'info');
+              loadKeys(list);
+            } catch (e) {
+              toast(e.message, 'error');
+            }
+          } }),
+        ]),
+      ]));
+    }
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function createKey(list) {
+  const name = el('input', { type: 'text', value: 'API key', placeholder: 'Key name' });
+  const body = el('div', { class: 'modal-body' }, [el('div', { class: 'field' }, [el('label', { text: 'Name' }), name])]);
+  const foot = el('div', { class: 'modal-foot' }, [
+    el('button', { class: 'btn', text: 'Cancel', onclick: () => close() }),
+    el('button', { class: 'btn primary', text: 'Create', onclick: async () => {
+      try {
+        const res = await api.post('/api/keys', { name: name.value.trim() || 'API key' });
+        close();
+        showCreatedKey(res.key);
+        loadKeys(list);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    } }),
+  ]);
+  let close = () => {};
+  const backdrop = el('div', { class: 'modal-backdrop' });
+  close = () => backdrop.remove();
+  backdrop.append(el('div', { class: 'modal' }, [
+    el('div', { class: 'modal-head' }, [el('h2', { text: 'Create API key' }), el('button', { class: 'x', html: '&times;', onclick: close })]),
+    body,
+    foot,
+  ]));
+  document.body.append(backdrop);
+  name.focus();
+}
+
+function showCreatedKey(key) {
+  const raw = key && key.key;
+  const body = el('div', { class: 'modal-body' }, [
+    el('div', { class: 'hint', text: 'Copy this key now. It will not be shown again.' }),
+    el('input', { type: 'text', class: 'mono', value: raw || '', readonly: 'readonly', style: 'width:100%;margin-top:8px' }),
+  ]);
+  const foot = el('div', { class: 'modal-foot' }, [
+    el('button', { class: 'btn primary', text: 'Done', onclick: () => close() }),
+  ]);
+  let close = () => {};
+  const backdrop = el('div', { class: 'modal-backdrop' });
+  close = () => backdrop.remove();
+  backdrop.append(el('div', { class: 'modal' }, [
+    el('div', { class: 'modal-head' }, [el('h2', { text: 'API key created' }), el('button', { class: 'x', html: '&times;', onclick: close })]),
+    body,
+    foot,
+  ]));
+  document.body.append(backdrop);
+}
+
+/* ---------- Webhooks ---------- */
+
+function renderWebhooks(content) {
+  const list = el('div', { class: 'card-list' });
+  const hint = el('div', { class: 'hint', style: 'margin-bottom:12px;max-width:640px', text: 'HTTPS endpoints receive signed JSON for send and schedule events. Localhost and private IPs are blocked.' });
+  const add = el('button', { class: 'btn primary', text: '+ Add webhook', onclick: () => webhookForm(null, list) });
+  content.append(hint, add, list);
+  loadWebhooks(list);
+}
+
+async function loadWebhooks(list) {
+  try {
+    const res = await api.get('/api/webhooks');
+    clear(list);
+    const events = res.events || [];
+    if (!(res.webhooks || []).length) {
+      list.append(el('div', { class: 'empty-state', text: 'No webhooks yet.' }));
+      return;
+    }
+    for (const w of res.webhooks) {
+      list.append(el('div', { class: 'card-list-item', style: 'cursor:default' }, [
+        el('div', { class: 'body' }, [
+          el('div', { class: 'name', text: w.url }),
+          el('div', { class: 'meta', text: `${w.enabled ? 'Enabled' : 'Disabled'} · ${(w.events || []).join(', ') || 'no events'}` }),
+        ]),
+        el('div', { class: 'actions' }, [
+          el('button', { class: 'btn', text: w.enabled ? 'Disable' : 'Enable', onclick: async () => {
+            try {
+              await api.patch(`/api/webhooks/${w.id}`, { enabled: !w.enabled });
+              loadWebhooks(list);
+            } catch (e) {
+              toast(e.message, 'error');
+            }
+          } }),
+          el('button', { class: 'btn danger', text: 'Delete', onclick: async () => {
+            const ok = await confirmDialog('Delete webhook', `Remove webhook for ${w.url}?`);
+            if (!ok) return;
+            try {
+              await api.del(`/api/webhooks/${w.id}`);
+              toast('Webhook deleted', 'info');
+              loadWebhooks(list);
+            } catch (e) {
+              toast(e.message, 'error');
+            }
+          } }),
+        ]),
+      ]));
+    }
+    list.dataset.events = JSON.stringify(events);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+function webhookForm(existing, list) {
+  const url = el('input', { type: 'url', placeholder: 'https://example.com/hooks/email', value: existing ? existing.url : '' });
+  const secret = el('input', { type: 'text', placeholder: 'Optional signing secret' });
+  const eventsWrap = el('div', { class: 'chip-row', style: 'flex-wrap:wrap' });
+  const known = ['send.success', 'send.failure', 'schedule.created', 'schedule.cancelled', 'schedule.sent', 'auth.expired', 'account.verify.failed'];
+  const selected = new Set(existing && existing.events ? existing.events : known);
+  for (const ev of known) {
+    const btn = el('button', { class: 'chip' + (selected.has(ev) ? ' active' : ''), type: 'button', text: ev, onclick: () => {
+      if (selected.has(ev)) selected.delete(ev);
+      else selected.add(ev);
+      btn.classList.toggle('active', selected.has(ev));
+    } });
+    eventsWrap.append(btn);
+  }
+  const body = el('div', { class: 'modal-body' }, [
+    el('div', { class: 'field' }, [el('label', { text: 'URL' }), url]),
+    el('div', { class: 'field' }, [el('label', { text: 'Secret' }), secret]),
+    el('div', { class: 'hint', style: 'margin-bottom:8px', text: 'Events' }),
+    eventsWrap,
+  ]);
+  const foot = el('div', { class: 'modal-foot' }, [
+    el('button', { class: 'btn', text: 'Cancel', onclick: () => close() }),
+    el('button', { class: 'btn primary', text: 'Save', onclick: async () => {
+      try {
+        const res = await api.post('/api/webhooks', { url: url.value, secret: secret.value, events: [...selected] });
+        close();
+        if (res.webhook && res.webhook.secret) toast('Webhook created. Copy the secret from the response now.', 'success', 6000);
+        else toast('Webhook saved', 'success');
+        loadWebhooks(list);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    } }),
+  ]);
+  let close = () => {};
+  const backdrop = el('div', { class: 'modal-backdrop' });
+  close = () => backdrop.remove();
+  backdrop.append(el('div', { class: 'modal' }, [
+    el('div', { class: 'modal-head' }, [el('h2', { text: 'Add webhook' }), el('button', { class: 'x', html: '&times;', onclick: close })]),
+    body,
+    foot,
+  ]));
+  document.body.append(backdrop);
+  url.focus();
 }
 
 /* ---------- Storage ---------- */

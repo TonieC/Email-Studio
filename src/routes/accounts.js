@@ -96,7 +96,12 @@ router.post('/:id/verify', async (req, res, next) => {
     await EmailService.verifySmtp(account.config);
     return res.json({ ok: true, message: 'SMTP connection successful' });
   } catch (err) {
-    if (err.code === 'GMAIL_AUTH_EXPIRED') return res.status(401).json({ error: 'Gmail authorization expired', code: 'GMAIL_AUTH_EXPIRED' });
+    const WebhookService = require('../services/WebhookService');
+    WebhookService.emit('account.verify.failed', { accountId: req.params.id, error: err.message }).catch(() => {});
+    if (err.code === 'GMAIL_AUTH_EXPIRED') {
+      WebhookService.emit('auth.expired', { accountId: req.params.id }).catch(() => {});
+      return res.status(401).json({ error: 'Gmail authorization expired', code: 'GMAIL_AUTH_EXPIRED' });
+    }
     return res.status(502).json({ error: err.message });
   }
 });

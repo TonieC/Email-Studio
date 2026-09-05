@@ -7,6 +7,22 @@ const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 
 function requireAuth(req, res, next) {
   if (req.session && req.session.userId) return next();
+  if (req.apiKey) return next();
+  return res.status(401).json({ error: 'Authentication required' });
+}
+
+function requireAuthOrApiKey(req, res, next) {
+  if (req.session && req.session.userId) return next();
+  const header = req.get('authorization') || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (token) {
+    const ApiKeyService = require('./services/ApiKeyService');
+    const key = ApiKeyService.verify(token);
+    if (key) {
+      req.apiKey = key;
+      return next();
+    }
+  }
   return res.status(401).json({ error: 'Authentication required' });
 }
 
@@ -17,8 +33,10 @@ function ensureCsrfToken(req, res, next) {
 
 function csrfProtect(req, res, next) {
   if (SAFE_METHODS.includes(req.method)) return next();
+  const auth = req.get('authorization') || '';
+  if (auth.startsWith('Bearer es_')) return next();
   const token = req.get('x-csrf-token');
-  const expected = req.session.csrf;
+  const expected = req.session && req.session.csrf;
   const ok = token && expected &&
     token.length === expected.length &&
     crypto.timingSafeEqual(Buffer.from(String(token)), Buffer.from(expected));
@@ -59,6 +77,16 @@ function sendLimiter() {
   });
 }
 
+function restLimiter() {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    limit: 120,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'API rate limit reached' },
+  });
+}
+
 function notFound(req, res) {
   return res.status(404).json({ error: 'Not found' });
 }
@@ -73,11 +101,13 @@ function errorHandler(err, req, res, _next) {
 
 module.exports = {
   requireAuth,
+  requireAuthOrApiKey,
   ensureCsrfToken,
   csrfProtect,
   apiLimiter,
   authLimiter,
   sendLimiter,
+  restLimiter,
   notFound,
   errorHandler,
 };

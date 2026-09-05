@@ -7,6 +7,7 @@ const path = require('path');
 const config = require('./src/config');
 const SQLiteSessionStore = require('./src/session-store');
 const TemplateService = require('./src/services/TemplateService');
+const ScheduleService = require('./src/services/ScheduleService');
 const { ensureCsrfToken, csrfProtect, apiLimiter, notFound, errorHandler } = require('./src/middleware');
 
 const app = express();
@@ -77,6 +78,16 @@ app.use('/api/assets', require('./src/routes/assets'));
 app.use('/api/templates', require('./src/routes/templates'));
 app.use('/api/history', require('./src/routes/history'));
 app.use('/api/settings', require('./src/routes/settings'));
+app.use('/api/folders', require('./src/routes/folders'));
+app.use('/api/blocks', require('./src/routes/blocks'));
+app.use('/api/contacts', require('./src/routes/contacts'));
+app.use('/api/schedule', require('./src/routes/schedule'));
+app.use('/api/links', require('./src/routes/links'));
+app.use('/api/webhooks', require('./src/routes/webhooks'));
+app.use('/api/keys', require('./src/routes/keys'));
+app.use('/api/format', require('./src/routes/format'));
+app.use('/api/docs', require('./src/routes/docs'));
+app.use('/api/v1', require('./src/routes/v1'));
 app.use('/', require('./src/routes/oauth'));
 
 // SPA fallback for non-API routes
@@ -107,6 +118,7 @@ function start(port = config.port) {
 }
 
 if (require.main === module) {
+  ScheduleService.start();
   start();
 }
 

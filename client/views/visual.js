@@ -1,5 +1,7 @@
 import { el } from '../ui.js';
 import { state } from '../state.js';
+import { BLOCKS } from '../blocks.js';
+import { api } from '../api.js';
 
 let iframeEl = null;
 let doc = null;
@@ -9,6 +11,7 @@ let overlay = null;
 let bodyEl = null;
 let callbacks = {};
 let changeTimer = null;
+let dragEl = null;
 
 export function buildDoc({ html, css }) {
   if (/<html[\s>]/i.test(html)) {
@@ -17,13 +20,17 @@ export function buildDoc({ html, css }) {
     }
     return html;
   }
-  return `<!doctype html><html><head><meta charset="utf-8"><style data-es-preview>${css || ''}</style></head><body>${html || ''}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><style data-es-preview>${css || ''}</style></head><body>${html || ''}</body></html>`;
 }
 
 export function serializeCurrent() {
   if (!doc || !doc.documentElement) return state.project.html;
   const clone = doc.documentElement.cloneNode(true);
   clone.querySelectorAll('style[data-es-preview]').forEach((s) => s.remove());
+  clone.querySelectorAll('[data-es-hover],[contenteditable]').forEach((n) => {
+    n.removeAttribute('data-es-hover');
+    n.removeAttribute('contenteditable');
+  });
   return `<!doctype html>${clone.outerHTML}`;
 }
 
@@ -43,9 +50,10 @@ export function initVisual(iframe, cb) {
   doc.addEventListener('click', onDocClick, true);
   doc.addEventListener('mouseover', onMouseOver, true);
   doc.addEventListener('mouseout', onMouseOut, true);
+  doc.addEventListener('dblclick', onDblClick, true);
+  doc.addEventListener('keydown', onKey, true);
   window.addEventListener('resize', updateOverlay);
 
-  // Overlay for the selected element
   overlay = el('div', {
     class: 'visual-outline',
     style: 'position:absolute;border:2px solid #007acc;background:rgba(0,122,204,0.08);pointer-events:none;z-index:50;display:none;',
@@ -60,6 +68,8 @@ export function destroyVisual() {
   doc.removeEventListener('click', onDocClick, true);
   doc.removeEventListener('mouseover', onMouseOver, true);
   doc.removeEventListener('mouseout', onMouseOut, true);
+  doc.removeEventListener('dblclick', onDblClick, true);
+  doc.removeEventListener('keydown', onKey, true);
   window.removeEventListener('resize', updateOverlay);
   if (overlay && overlay.parentNode) overlay.remove();
   overlay = null;
@@ -102,6 +112,29 @@ function onDocClick(e) {
   select(target);
 }
 
+function onDblClick(e) {
+  const target = closestEditable(e.target);
+  if (!target) return;
+  if (/^(p|h1|h2|h3|h4|h5|h6|span|a|td|li|blockquote)$/i.test(target.tagName)) {
+    target.setAttribute('contenteditable', 'true');
+    target.focus();
+    target.addEventListener('blur', () => {
+      target.removeAttribute('contenteditable');
+      pushSnapshot();
+      scheduleSync();
+    }, { once: true });
+  }
+}
+
+function onKey(e) {
+  if (!selectedEl) return;
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (doc.activeElement && doc.activeElement.isContentEditable) return;
+    e.preventDefault();
+    deleteSelected();
+  }
+}
+
 function select(node) {
   selectedEl = node;
   if (!node) {
@@ -119,6 +152,10 @@ function select(node) {
     selector,
     el: node,
     doc,
+    href: node.getAttribute('href') || '',
+    src: node.getAttribute('src') || '',
+    alt: node.getAttribute('alt') || '',
+    text: (node.innerText || '').slice(0, 400),
   };
   updateOverlayRect(node);
   callbacks.onSelect && callbacks.onSelect(selectedInfo);
@@ -182,6 +219,13 @@ export function applyStyleMap(styles) {
   scheduleSync();
 }
 
+export function applyAttr(name, value) {
+  if (!selectedEl) return;
+  if (!value) selectedEl.removeAttribute(name);
+  else selectedEl.setAttribute(name, value);
+  scheduleSync();
+}
+
 function scheduleSync() {
   if (changeTimer) clearTimeout(changeTimer);
   changeTimer = setTimeout(() => {
@@ -226,7 +270,53 @@ export function pushSnapshot() {
   state.visualHistoryIndex = next.length - 1;
 }
 
-/* ---------------- Inspector ---------------- */
+export function insertBlockHtml(html, afterSelected) {
+  if (!doc) return;
+  pushSnapshot();
+  const wrap = doc.createElement('div');
+  wrap.innerHTML = html;
+  const nodes = [...wrap.childNodes];
+  const target = afterSelected && selectedEl ? selectedEl : doc.body;
+  for (const n of nodes) {
+    if (afterSelected && selectedEl && selectedEl.parentNode) {
+      selectedEl.parentNode.insertBefore(n, selectedEl.nextSibling);
+    } else {
+      doc.body.appendChild(n);
+    }
+  }
+  scheduleSync();
+}
+
+export function duplicateSelected() {
+  if (!selectedEl) return;
+  pushSnapshot();
+  const clone = selectedEl.cloneNode(true);
+  selectedEl.parentNode.insertBefore(clone, selectedEl.nextSibling);
+  select(clone);
+  scheduleSync();
+}
+
+export function deleteSelected() {
+  if (!selectedEl) return;
+  pushSnapshot();
+  const parent = selectedEl.parentNode;
+  const next = selectedEl.nextElementSibling || selectedEl.previousElementSibling;
+  selectedEl.remove();
+  select(next || null);
+  scheduleSync();
+}
+
+export function moveSelected(dir) {
+  if (!selectedEl || !selectedEl.parentNode) return;
+  pushSnapshot();
+  if (dir < 0 && selectedEl.previousElementSibling) {
+    selectedEl.parentNode.insertBefore(selectedEl, selectedEl.previousElementSibling);
+  } else if (dir > 0 && selectedEl.nextElementSibling) {
+    selectedEl.parentNode.insertBefore(selectedEl.nextElementSibling, selectedEl);
+  }
+  updateOverlay();
+  scheduleSync();
+}
 
 function group(title) {
   return el('div', { class: 'group' }, [el('div', { class: 'group-title', text: title })]);
@@ -244,17 +334,64 @@ function textInput(placeholder) {
   return el('input', { type: 'text', placeholder });
 }
 
+export function buildPalette(onInsert) {
+  const root = el('div', { class: 'block-palette' });
+  const cats = {};
+  for (const b of BLOCKS) {
+    if (!cats[b.category]) cats[b.category] = [];
+    cats[b.category].push(b);
+  }
+  for (const [cat, items] of Object.entries(cats)) {
+    const g = group(cat);
+    const list = el('div', { class: 'palette-list' });
+    for (const b of items) {
+      const btn = el('button', {
+        class: 'palette-item',
+        type: 'button',
+        draggable: 'true',
+        text: b.label,
+        onclick: () => onInsert(b.html),
+      });
+      btn.addEventListener('dragstart', (e) => {
+        dragEl = b;
+        e.dataTransfer.setData('text/plain', b.html);
+      });
+      list.append(btn);
+    }
+    g.append(list);
+    root.append(g);
+  }
+  const saved = el('div', { class: 'group' }, [el('div', { class: 'group-title', text: 'Saved blocks' })]);
+  const savedList = el('div', { class: 'palette-list' });
+  saved.append(savedList);
+  root.append(saved);
+  api.get('/api/blocks').then((res) => {
+    for (const b of res.blocks || []) {
+      savedList.append(el('button', {
+        class: 'palette-item',
+        type: 'button',
+        text: b.name,
+        onclick: () => onInsert(b.html),
+      }));
+    }
+    if (!(res.blocks || []).length) savedList.append(el('div', { class: 'hint', text: 'Save a selection as a reusable block.' }));
+  }).catch(() => {});
+  return root;
+}
+
 export function buildInspector(info) {
   const root = el('div', { class: 'inspector' });
   const { el: node } = info;
   const tagBadge = el('span', { class: 'badge', text: `<${info.tag}>` });
   const selector = el('div', { class: 'hint mono', style: 'word-break:break-all;margin-bottom:8px', text: info.selector });
-  const headRow = el('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:4px' }, [
+  const headRow = el('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap' }, [
     tagBadge,
     el('button', { class: 'btn small', text: 'Deselect', onclick: () => callbacks.onSelect && callbacks.onSelect(null) }),
     el('div', { class: 'topbar-spacer' }),
-    el('button', { class: 'btn small', text: 'Undo (Ctrl+Z)', onclick: () => undoVisual() }),
-    el('button', { class: 'btn small', text: 'Redo', onclick: () => redoVisual() }),
+    el('button', { class: 'btn small', text: 'Up', onclick: () => moveSelected(-1) }),
+    el('button', { class: 'btn small', text: 'Down', onclick: () => moveSelected(1) }),
+    el('button', { class: 'btn small', text: 'Duplicate', onclick: () => duplicateSelected() }),
+    el('button', { class: 'btn small danger', text: 'Delete', onclick: () => deleteSelected() }),
   ]);
   root.append(headRow, selector);
 
@@ -263,7 +400,36 @@ export function buildInspector(info) {
     applyStyle(prop, e.target.value);
   };
 
-  // Typography
+  if (/^(p|h1|h2|h3|h4|h5|h6|a|span|td|blockquote)$/i.test(info.tag)) {
+    const content = group('Content');
+    const ta = el('textarea', { rows: '4' });
+    ta.value = node.innerText || '';
+    ta.oninput = () => { node.innerText = ta.value; scheduleSync(); };
+    content.append(inspectorField('Text', ta));
+    root.append(content);
+  }
+
+  if (info.tag === 'a') {
+    const link = group('Link');
+    const href = textInput('https://');
+    href.value = node.getAttribute('href') || '';
+    href.oninput = () => { pushSnapshot(); applyAttr('href', href.value); };
+    link.append(inspectorField('URL', href));
+    root.append(link);
+  }
+
+  if (info.tag === 'img') {
+    const img = group('Image');
+    const src = textInput('/api/assets/…');
+    src.value = node.getAttribute('src') || '';
+    src.oninput = () => { pushSnapshot(); applyAttr('src', src.value); };
+    const alt = textInput('Alt text');
+    alt.value = node.getAttribute('alt') || '';
+    alt.oninput = () => applyAttr('alt', alt.value);
+    img.append(inspectorField('Source', src), inspectorField('Alt', alt));
+    root.append(img);
+  }
+
   const typo = group('Typography');
   typo.append(
     inspectorField('Font family', (() => { const i = textInput('Helvetica, Arial'); i.value = curStyle(info, 'font-family'); i.oninput = onChange('font-family'); return i; })()),
@@ -287,7 +453,6 @@ export function buildInspector(info) {
   typo.append(el('div', { class: 'row' }, [el('label', { text: 'Align' }), ta]));
   root.append(typo);
 
-  // Colors
   const colors = group('Colors');
   colors.append(
     colorField('Text color', 'color', info, onChange),
@@ -295,7 +460,6 @@ export function buildInspector(info) {
   );
   root.append(colors);
 
-  // Spacing
   const spacing = group('Spacing');
   const sides = ['top', 'right', 'bottom', 'left'];
   const padRow = el('div', { style: 'display:flex;gap:4px' });
@@ -322,7 +486,6 @@ export function buildInspector(info) {
   );
   root.append(spacing);
 
-  // Borders
   const borders = group('Border');
   borders.append(
     inspectorField('Width', (() => { const i = textInput('1px'); i.value = curStyle(info, 'border-width'); i.oninput = onChange('border-width'); return i; })()),
@@ -337,7 +500,6 @@ export function buildInspector(info) {
   );
   root.append(borders);
 
-  // Layout
   const layout = group('Layout');
   layout.append(
     inspectorField('Width', (() => { const i = textInput('100%'); i.value = curStyle(info, 'width'); i.oninput = onChange('width'); return i; })()),
@@ -346,14 +508,20 @@ export function buildInspector(info) {
   );
   root.append(layout);
 
-  const resetBtn = el('button', { class: 'btn small', text: 'Clear inline styles on this element', onclick: () => {
+  const saveBlock = el('button', { class: 'btn small', text: 'Save as reusable block', onclick: async () => {
+    const name = window.prompt('Block name', info.tag + ' block');
+    if (!name) return;
+    await api.post('/api/blocks', { name, html: node.outerHTML, css: '' });
+    callbacks.onToast && callbacks.onToast('Block saved');
+  } });
+  const resetBtn = el('button', { class: 'btn small', text: 'Clear inline styles', onclick: () => {
     if (!info.el) return;
     pushSnapshot();
     info.el.removeAttribute('style');
     scheduleSync();
     renderInspectorRefresh();
   } });
-  root.append(el('div', { style: 'margin-top:8px' }, [resetBtn]));
+  root.append(el('div', { style: 'margin-top:8px;display:flex;gap:6px;flex-wrap:wrap' }, [saveBlock, resetBtn]));
 
   return root;
 }

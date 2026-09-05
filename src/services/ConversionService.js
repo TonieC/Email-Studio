@@ -229,24 +229,31 @@ function postProcess($) {
 }
 
 function convert({ html, css, options = {} }) {
+  const started = Date.now();
   let warnings = [];
+  const transformations = [];
+  const originalBytes = Buffer.byteLength(String(html || '') + String(css || ''), 'utf8');
   let $ = buildDocument(html, css);
 
   const sanitizeStats = sanitize($);
   if (sanitizeStats.removedTags > 0) {
     warnings.push(`Removed ${sanitizeStats.removedTags} unsafe element(s) (scripts, forms, iframes, etc.)`);
+    transformations.push({ type: 'sanitize', detail: `Removed ${sanitizeStats.removedTags} unsafe tag(s)` });
   }
   if (sanitizeStats.removedHandlers > 0) {
     warnings.push(`Removed ${sanitizeStats.removedHandlers} inline event handler(s)`);
+    transformations.push({ type: 'sanitize', detail: `Removed ${sanitizeStats.removedHandlers} event handler(s)` });
   }
   if (sanitizeStats.removedUrls > 0) {
     warnings.push(`Removed ${sanitizeStats.removedUrls} unsafe URL(s)`);
+    transformations.push({ type: 'sanitize', detail: `Removed ${sanitizeStats.removedUrls} unsafe URL(s)` });
   }
 
   const rawHtml = $.html();
   let inlinedHtml;
   try {
     inlinedHtml = juice(rawHtml, JUICE_OPTIONS);
+    transformations.push({ type: 'inline-css', detail: 'Inlined CSS into element style attributes' });
   } catch (err) {
     const e = new Error(`CSS inlining failed: ${err.message}`);
     e.status = 422;
@@ -255,18 +262,26 @@ function convert({ html, css, options = {} }) {
 
   $ = cheerio.load(inlinedHtml, { decodeEntities: false });
 
+  const tablesBefore = $('table').length;
   convertFlexToTable($);
+  const tablesAfter = $('table').length;
+  if (tablesAfter > tablesBefore) {
+    transformations.push({ type: 'flex-to-table', detail: `Converted flex layout into ${tablesAfter - tablesBefore} table(s)` });
+  }
 
   const inlineAssetCount = options.inlineAssets ? inlineLocalAssets($) : 0;
-  if (inlineAssetCount > 0) warnings.push(`Inlined ${inlineAssetCount} local image(s) as data URIs`);
+  if (inlineAssetCount > 0) {
+    warnings.push(`Inlined ${inlineAssetCount} local image(s) as data URIs`);
+    transformations.push({ type: 'inline-assets', detail: `Inlined ${inlineAssetCount} image(s)` });
+  }
 
   postProcess($);
+  transformations.push({ type: 'harden', detail: 'Applied email-client table, image and reset hardening' });
 
   let out = $.html();
   if (!/^<!DOCTYPE/i.test(out.trim())) out = DOCTYPE + '\n' + out.trim();
   out = out.replace(/\n{3,}/g, '\n\n');
 
-  // Inspect output for retained <style> (media queries, keyframes, font-faces)
   const preserved = cheerio.load(out, { decodeEntities: false });
   let hasMediaQueries = false;
   let hasFlexOrGrid = false;
@@ -276,16 +291,23 @@ function convert({ html, css, options = {} }) {
     if (/(?:^|[;}])\s*display\s*:\s*(flex|inline-flex|grid|inline-grid)/i.test(text)) hasFlexOrGrid = true;
   });
 
+  const MinifyService = require('./MinifyService');
+  const minified = MinifyService.minifyHtml(out);
+  const sizeBytes = Buffer.byteLength(out, 'utf8');
+
   const stats = {
     inlineStyles: (out.match(/style\s*=/gi) || []).length,
     images: preserved('img').length,
     tables: preserved('table').length,
     mediaQueries: hasMediaQueries,
     flexOrGrid: hasFlexOrGrid,
-    sizeBytes: Buffer.byteLength(out, 'utf8'),
+    sizeBytes,
+    originalBytes,
+    minifiedBytes: Buffer.byteLength(minified, 'utf8'),
+    durationMs: Date.now() - started,
   };
 
-  return { html: out, stats, warnings };
+  return { html: out, minified, originalHtml: String(html || ''), stats, warnings, transformations };
 }
 
-module.exports = { convert, DOCTYPE };
+module.exports = { convert, sanitize, importSafe: sanitize, DOCTYPE };

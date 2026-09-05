@@ -73,6 +73,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 `);
 
+require('./migrate').migrate(db);
+
 // Periodically purge expired sessions.
 setInterval(() => {
   try {

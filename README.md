@@ -23,10 +23,13 @@ A self-hosted developer email IDE. Write HTML/CSS in a CodeMirror editor, previe
 - Responsive preview (desktop 600px / mobile 375px) in a sandboxed iframe
 - Convert HTML/CSS to email-safe HTML, then download or send it
 - Export any project as a ZIP bundle (standalone `index.html`, `project.json` and referenced images) or as a single HTML file
-- Asset library (images only) for campaigns
-- 6 starter templates: Blank, Welcome, Newsletter, Product Announcement, Transactional, Notification
+- Asset library (images only) for campaigns, with unused/oversized hints
+- Starter templates plus custom templates, folders, tags, favorites, archive and trash
+- Contacts with CSV import/export and `{{merge}}` fields
+- Email Doctor, scheduled sends, API keys, and signed webhooks
+- REST API at `/api/v1` (session + CSRF, or `Authorization: Bearer es_…`)
 - Send history, accounts, general / security / storage settings
-- Multi-project workspace with duplicate support
+- Multi-project workspace with duplicate, versions, and crash-draft restore
 
 ## Quick start with Docker
 
@@ -185,7 +188,7 @@ For the end-to-end test, start the server first, then run it separately:
 
 ```bash
 npm start &
-node test/e2e.mjs   # exercises setup, auth, CSRF, projects, assets, conversion, SMTP send, history, templates, settings
+node test/e2e.mjs   # exercises setup, auth, CSRF, projects, assets, conversion, SMTP send, history, templates, contacts, API keys, webhooks
 ```
 
 The e2e test sends against a local in-process SMTP sink on port 2525.
@@ -200,8 +203,8 @@ src/crypto.js           AES-256-GCM helpers, key management
 src/middleware.js       auth, CSRF, rate limiters, error handling
 src/session-store.js    SQLite-backed express-session store
 src/validators.js       input validation helpers
-src/routes/             HTTP endpoints (auth, projects, convert, send, accounts, assets, templates, history, settings, oauth, health)
-src/services/           business logic (Project, Template, Asset, History, Conversion, Compatibility, Account, OAuth, Email, Settings, Storage)
+src/routes/             HTTP endpoints (auth, projects, convert, send, accounts, assets, templates, history, settings, folders, contacts, schedule, keys, webhooks, v1, oauth, health)
+src/services/           business logic (Project, Template, Asset, History, Conversion, Compatibility, Account, OAuth, Email, Settings, Doctor, Merge, Schedule, ApiKey, Webhook)
 client/                 vanilla JS frontend, esbuild build script, styles
 public/                 built assets + SPA shell
 test/                   e2e test suite

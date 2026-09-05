@@ -3,12 +3,19 @@
 const db = require('../db');
 const crypto = require('crypto');
 
+const CATEGORIES = [
+  'marketing', 'newsletter', 'transactional', 'e-commerce', 'saas', 'events',
+  'notifications', 'welcome', 'reset', 'receipts', 'promotions', 'custom',
+];
+
 const BUILTINS = [
-  { key: 'blank', name: 'Blank Email', description: 'Empty canvas with a responsive 600px container.', html: '', css: '' },
+  { key: 'blank', name: 'Blank Email', description: 'Empty canvas with a responsive 600px container.', category: 'custom', tags: ['blank'], html: '', css: '' },
   {
     key: 'welcome',
     name: 'Welcome Email',
     description: 'A friendly introduction for new subscribers.',
+    category: 'welcome',
+    tags: ['welcome', 'onboarding'],
     html: `<div class="container">
   <div class="logo"><span class="logo-text">Acme</span></div>
   <div class="card">
@@ -58,6 +65,8 @@ p { font-size: 15px; line-height: 1.6; color: #374151; margin: 0 0 16px; }
     key: 'newsletter',
     name: 'Newsletter',
     description: 'Article digest with a two-column layout.',
+    category: 'newsletter',
+    tags: ['newsletter', 'digest'],
     html: `<div class="container">
   <div class="header">
     <span class="brand">The Daily Byte</span>
@@ -111,6 +120,8 @@ p { font-size: 15px; line-height: 1.6; color: #374151; margin: 0 0 16px; }
     key: 'product',
     name: 'Product Announcement',
     description: 'Launch or feature announcement with a call to action.',
+    category: 'marketing',
+    tags: ['product', 'launch', 'saas'],
     html: `<div class="container">
   <div class="brand">Nimbus Cloud</div>
   <div class="banner">
@@ -164,6 +175,8 @@ h1 { margin: 0 0 12px; font-size: 30px; color: #0f172a; }
     key: 'transactional',
     name: 'Transactional Email',
     description: 'Order or receipt confirmation with a clear summary.',
+    category: 'receipts',
+    tags: ['transactional', 'receipt', 'e-commerce'],
     html: `<div class="container">
   <div class="header">
     <span class="brand">Shopline</span>
@@ -219,6 +232,8 @@ h1 { margin: 0 0 6px; font-size: 22px; color: #0f172a; }
     key: 'notification',
     name: 'Notification',
     description: 'Alert-style email for system or account events.',
+    category: 'notifications',
+    tags: ['notification', 'security'],
     html: `<div class="container">
   <div class="icon">!</div>
   <div class="card">
@@ -248,6 +263,103 @@ h1 { margin: 0 0 12px; font-size: 22px; color: #0f172a; }
 .meta span { display: block; padding: 2px 0; }
 .footer { text-align: center; padding-top: 16px; color: #94a3b8; font-size: 12px; }`,
   },
+  {
+    key: 'reset',
+    name: 'Password Reset',
+    description: 'Transactional reset link with a clear expiry note.',
+    category: 'reset',
+    tags: ['reset', 'transactional', 'security'],
+    html: `<div class="container">
+  <div class="card">
+    <h1>Reset your password</h1>
+    <p>We received a request to reset the password for {{email}}. Click the button below. This link expires in 60 minutes.</p>
+    <a href="#" class="button">Choose a new password</a>
+    <p class="muted">If you did not request this, you can ignore this email.</p>
+  </div>
+  <div class="footer"><a href="#">Unsubscribe</a></div>
+</div>`,
+    css: `.container{margin:0 auto;max-width:520px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8fafc;padding:32px}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:28px}
+h1{margin:0 0 12px;font-size:22px;color:#0f172a}
+p{color:#475569;font-size:15px;line-height:1.6}
+.button{display:inline-block;background:#2563eb;color:#fff!important;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;margin:12px 0}
+.muted{color:#94a3b8;font-size:13px}
+.footer{text-align:center;padding-top:16px;font-size:12px}
+.footer a{color:#64748b}`,
+  },
+  {
+    key: 'promo',
+    name: 'Promotion',
+    description: 'Discount campaign with a bold call to action.',
+    category: 'promotions',
+    tags: ['promo', 'marketing', 'e-commerce'],
+    html: `<div class="container">
+  <div class="hero">
+    <p class="eyebrow">Limited time</p>
+    <h1>Save 30% this weekend</h1>
+    <p>Use code SAVE30 at checkout. Offer ends Sunday night.</p>
+    <a href="#" class="button">Shop the sale</a>
+  </div>
+  <div class="footer"><a href="#">Unsubscribe</a></div>
+</div>`,
+    css: `.container{margin:0 auto;max-width:600px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#fff}
+.hero{background:#7c3aed;color:#fff;padding:48px 32px;text-align:center}
+.eyebrow{letter-spacing:2px;text-transform:uppercase;font-size:12px;margin:0 0 8px}
+h1{margin:0 0 12px;font-size:32px}
+.button{display:inline-block;background:#fff;color:#7c3aed!important;text-decoration:none;padding:14px 28px;border-radius:999px;font-weight:700}
+.footer{text-align:center;padding:16px;font-size:12px;color:#94a3b8}
+.footer a{color:#64748b}`,
+  },
+  {
+    key: 'event',
+    name: 'Event Invite',
+    description: 'Invitation with date, location and RSVP.',
+    category: 'events',
+    tags: ['event', 'invite'],
+    html: `<div class="container">
+  <div class="card">
+    <p class="tag">You're invited</p>
+    <h1>Product summit 2026</h1>
+    <p>Join us on May 12 in Austin for a day of talks, workshops and demos.</p>
+    <table role="presentation" width="100%"><tr>
+      <td><strong>When</strong><br>May 12, 09:00</td>
+      <td><strong>Where</strong><br>Austin, TX</td>
+    </tr></table>
+    <a href="#" class="button">RSVP now</a>
+  </div>
+  <div class="footer"><a href="#">Unsubscribe</a></div>
+</div>`,
+    css: `.container{margin:0 auto;max-width:560px;font-family:Georgia,serif;padding:24px;background:#fafafa}
+.card{background:#fff;padding:32px;border:1px solid #e5e7eb}
+.tag{color:#b45309;font-weight:700;letter-spacing:1px;text-transform:uppercase;font-size:12px}
+h1{font-size:28px;margin:8px 0 12px}
+.button{display:inline-block;margin-top:16px;background:#111827;color:#fff!important;text-decoration:none;padding:12px 24px}
+.footer{text-align:center;font-size:12px;padding-top:16px}
+.footer a{color:#6b7280}`,
+  },
+  {
+    key: 'saas',
+    name: 'SaaS Usage',
+    description: 'Product usage summary for SaaS customers.',
+    category: 'saas',
+    tags: ['saas', 'digest'],
+    html: `<div class="container">
+  <h1>Your week with Nimbus</h1>
+  <p>Hi {{first_name|there}}, here is what your workspace shipped this week.</p>
+  <table role="presentation" width="100%">
+    <tr><td>Deploys</td><td align="right"><strong>48</strong></td></tr>
+    <tr><td>Build minutes</td><td align="right"><strong>312</strong></td></tr>
+  </table>
+  <a href="#" class="button">Open dashboard</a>
+  <div class="footer"><a href="#">Unsubscribe</a></div>
+</div>`,
+    css: `.container{margin:0 auto;max-width:560px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:28px}
+h1{font-size:22px;color:#0f172a}
+td{padding:8px 0;border-bottom:1px solid #e2e8f0;color:#475569}
+.button{display:inline-block;margin-top:16px;background:#0f172a;color:#fff!important;text-decoration:none;padding:12px 20px;border-radius:6px}
+.footer{margin-top:20px;font-size:12px}
+.footer a{color:#64748b}`,
+  },
 ];
 
 let seeded = false;
@@ -255,25 +367,39 @@ let seeded = false;
 function seed() {
   if (seeded) return;
   seeded = true;
-  const count = db.prepare('SELECT COUNT(*) AS n FROM settings WHERE key = ?').get('templates_seeded');
-  if (count.n > 0) return;
   const insert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+  const exists = db.prepare('SELECT key FROM settings WHERE key = ?');
   const txn = db.transaction(() => {
     for (const t of BUILTINS) {
-      insert.run('template:' + t.key, JSON.stringify({ name: t.name, description: t.description, html: t.html, css: t.css }));
+      const key = 'template:' + t.key;
+      const payload = JSON.stringify({ name: t.name, description: t.description, html: t.html, css: t.css, category: t.category || 'custom', tags: t.tags || [] });
+      if (!exists.get(key)) insert.run(key, payload);
     }
     insert.run('templates_seeded', '1');
   });
   txn();
 }
 
-function list() {
+function list({ q, category, tag } = {}) {
   seed();
   const rows = db.prepare('SELECT key, value FROM settings WHERE key LIKE \'template:%\' ORDER BY key').all();
-  return rows.map((r) => {
+  let items = rows.map((r) => {
     const data = JSON.parse(r.value);
-    return { key: r.key.slice('template:'.length), name: data.name, description: data.description };
+    return {
+      key: r.key.slice('template:'.length),
+      name: data.name,
+      description: data.description,
+      category: data.category || (String(r.key).includes('custom') ? 'custom' : 'marketing'),
+      tags: Array.isArray(data.tags) ? data.tags : [],
+    };
   });
+  if (category) items = items.filter((t) => t.category === category);
+  if (tag) items = items.filter((t) => t.tags.includes(tag));
+  if (q) {
+    const s = String(q).toLowerCase();
+    items = items.filter((t) => `${t.name} ${t.description} ${t.category} ${t.tags.join(' ')}`.toLowerCase().includes(s));
+  }
+  return items;
 }
 
 function get(key) {
@@ -281,14 +407,29 @@ function get(key) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('template:' + String(key).replace(/[^a-z0-9_-]/gi, ''));
   if (!row) return null;
   const data = JSON.parse(row.value);
-  return { key, name: data.name, html: data.html, css: data.css };
+  return {
+    key,
+    name: data.name,
+    description: data.description,
+    html: data.html,
+    css: data.css,
+    category: data.category || 'custom',
+    tags: Array.isArray(data.tags) ? data.tags : [],
+  };
 }
 
-function save(key, name, description, html, css) {
+function save(key, name, description, html, css, extra = {}) {
   seed();
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
     'template:' + String(key).replace(/[^a-z0-9_-]/gi, ''),
-    JSON.stringify({ name, description, html, css })
+    JSON.stringify({
+      name,
+      description,
+      html,
+      css,
+      category: extra.category || 'custom',
+      tags: Array.isArray(extra.tags) ? extra.tags : [],
+    })
   );
 }
 
@@ -297,4 +438,12 @@ function remove(key) {
   return db.prepare('DELETE FROM settings WHERE key = ?').run('template:' + String(key).replace(/[^a-z0-9_-]/gi, '')).changes > 0;
 }
 
-module.exports = { list, get, save, remove, seed, newId: () => crypto.randomUUID() };
+function duplicate(key) {
+  const t = get(key);
+  if (!t) return null;
+  const next = 'custom-' + Date.now().toString(36);
+  save(next, t.name + ' (copy)', t.description, t.html, t.css, { category: t.category, tags: t.tags });
+  return get(next);
+}
+
+module.exports = { list, get, save, remove, seed, duplicate, CATEGORIES, newId: () => crypto.randomUUID() };

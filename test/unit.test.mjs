@@ -75,6 +75,55 @@ test('conversion: flex becomes tables', () => {
   });
   assert.equal(out.stats.tables >= 1, true, 'flex converted to table');
   assert.match(out.html, /<table/, 'output contains table');
+  assert.ok(typeof out.minified === 'string');
+  assert.ok(Array.isArray(out.transformations));
+  assert.ok(out.stats.durationMs >= 0);
+  assert.ok(out.stats.originalBytes >= 0);
+});
+
+const MergeService = require('../src/services/MergeService.js');
+const MinifyService = require('../src/services/MinifyService.js');
+const EmailDoctorService = require('../src/services/EmailDoctorService.js');
+const HtmlImportService = require('../src/services/HtmlImportService.js');
+const LinkService = require('../src/services/LinkService.js');
+
+test('merge: applies variables and sanitizes values', () => {
+  const html = '<p>Hello {{first_name | there}}</p><a href="{{url}}">x</a>';
+  const out = MergeService.applyMerge(html, { first_name: 'Ada', url: '"><script>alert(1)</script>' });
+  assert.match(out, /Hello Ada/);
+  assert.ok(!/<script/i.test(out));
+  assert.ok(MergeService.listVariables(html).includes('first_name'));
+});
+
+test('minify: strips comments and extra whitespace', () => {
+  const html = MinifyService.minifyHtml('<!-- note --><div>  a  </div>\n  <p>b</p>');
+  assert.ok(!/note/.test(html));
+  assert.match(html, /<div> a <\/div><p>b<\/p>/);
+});
+
+test('doctor: flags scripts and can apply safe fixes', () => {
+  const html = '<html><body><img src="x"><script>alert(1)</script></body></html>';
+  const report = EmailDoctorService.analyze(html, '');
+  assert.ok(report.findings.some((f) => f.code === 'script' && f.level === 'error'));
+  assert.ok(report.summary.errors >= 1);
+  const fixed = EmailDoctorService.applyFixes(html, '', ['alt', 'lang', 'doctype']);
+  assert.ok(fixed.applied.includes('alt'));
+  assert.match(fixed.html, /alt=""/);
+  assert.match(fixed.html, /lang="en"/);
+});
+
+test('html import: extracts css and strips unsafe markup', () => {
+  const imported = HtmlImportService.importHtml('<html><head><style>.a{color:red}</style></head><body><p onclick="x()">Hi</p><script>bad()</script></body></html>');
+  assert.match(imported.css, /\.a\{color:red\}|\.a \{ color: red \}/);
+  assert.ok(!/script/i.test(imported.html));
+  assert.ok(!/onclick/i.test(imported.html));
+});
+
+test('links: classifies empty, http and suspicious hrefs', () => {
+  const links = LinkService.extract('<a href="#">x</a><a href="http://example.com">y</a><a href="javascript:alert(1)">z</a>');
+  assert.ok(links.some((l) => l.issues.includes('empty')));
+  assert.ok(links.some((l) => l.issues.includes('http')));
+  assert.ok(links.some((l) => l.issues.includes('suspicious')));
 });
 
 test('rate limiter: login attempts blocked after limit', async () => {

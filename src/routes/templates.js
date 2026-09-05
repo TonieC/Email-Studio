@@ -9,7 +9,10 @@ const router = express.Router();
 router.use(requireAuth);
 
 router.get('/', (req, res) => {
-  return res.json({ templates: TemplateService.list() });
+  return res.json({
+    templates: TemplateService.list({ q: req.query.q, category: req.query.category, tag: req.query.tag }),
+    categories: TemplateService.CATEGORIES,
+  });
 });
 
 router.post('/', (req, res, next) => {
@@ -20,8 +23,21 @@ router.post('/', (req, res, next) => {
     const description = String(body.description || 'Custom template').trim();
     const html = String(body.html || '');
     const css = String(body.css || '');
-    TemplateService.save(key, name, description, html, css);
-    return res.status(201).json({ template: { key, name, description } });
+    TemplateService.save(key, name, description, html, css, {
+      category: body.category || 'custom',
+      tags: body.tags,
+    });
+    return res.status(201).json({ template: { key, name, description, category: body.category || 'custom' } });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post('/:key/duplicate', (req, res, next) => {
+  try {
+    const template = TemplateService.duplicate(req.params.key);
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+    return res.status(201).json({ template });
   } catch (err) {
     return next(err);
   }

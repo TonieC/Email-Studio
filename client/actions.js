@@ -1,9 +1,11 @@
 import { api } from './api.js';
 import { state, set } from './state.js';
 
-export async function loadProjects() {
-  const res = await api.get('/api/projects');
-  set({ projects: res.projects });
+export async function loadProjects(params = {}) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '' && v !== false) q.set(k, v);
+  const res = await api.get('/api/projects' + (q.toString() ? '?' + q.toString() : ''));
+  set({ projects: res.projects, folders: res.folders || state.folders || [] });
   return res.projects;
 }
 
@@ -13,15 +15,17 @@ export async function loadAccounts() {
   return res.accounts;
 }
 
-export async function loadAssets() {
-  const res = await api.get('/api/assets');
+export async function loadAssets(params = {}) {
+  const q = new URLSearchParams(params);
+  const res = await api.get('/api/assets' + (q.toString() ? '?' + q.toString() : ''));
   set({ assets: res.assets });
   return res.assets;
 }
 
-export async function loadTemplates() {
-  const res = await api.get('/api/templates');
-  set({ templates: res.templates });
+export async function loadTemplates(params = {}) {
+  const q = new URLSearchParams(params);
+  const res = await api.get('/api/templates' + (q.toString() ? '?' + q.toString() : ''));
+  set({ templates: res.templates, templateCategories: res.categories || [] });
   return res.templates;
 }
 
@@ -31,11 +35,26 @@ export async function loadSettings() {
   return res.settings;
 }
 
-export async function loadHistory(projectId) {
-  const q = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
-  const res = await api.get('/api/history' + q);
+export async function loadHistory(params = {}) {
+  const q = new URLSearchParams();
+  if (typeof params === 'string') q.set('projectId', params);
+  else for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
+  const res = await api.get('/api/history' + (q.toString() ? '?' + q.toString() : ''));
   set({ history: res.history });
   return res.history;
+}
+
+export async function loadContacts(params = {}) {
+  const q = new URLSearchParams(params);
+  const res = await api.get('/api/contacts' + (q.toString() ? '?' + q.toString() : ''));
+  set({ contacts: res.contacts || [] });
+  return res.contacts;
+}
+
+export async function loadScheduled() {
+  const res = await api.get('/api/schedule');
+  set({ scheduled: res.scheduled || [] });
+  return res.scheduled;
 }
 
 export function refreshSidebar() {

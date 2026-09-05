@@ -41,11 +41,49 @@ const CLIENT_GUIDANCE = {
   },
 };
 
+function locate(source, re) {
+  const m = String(source || '').match(re);
+  if (!m) return null;
+  const idx = m.index || 0;
+  const line = String(source).slice(0, idx).split('\n').length;
+  return { line, snippet: String(source).slice(idx, idx + 80) };
+}
+
+function clientStatus(key, generatedHtml, allCss) {
+  const unsupported = [];
+  const partial = [];
+  if (/(?:^|[;}])\s*display\s*:\s*(flex|inline-flex|grid|inline-grid)/i.test(allCss)) {
+    if (key === 'outlook') unsupported.push({ feature: 'flexbox/grid', location: locate(allCss, /display\s*:\s*(flex|grid)/i) });
+    else if (key === 'gmail') partial.push({ feature: 'flexbox in Gmail app', location: locate(allCss, /display\s*:\s*flex/i) });
+  }
+  if (/@media/i.test(allCss)) {
+    if (key === 'outlook') unsupported.push({ feature: 'media queries', location: locate(allCss, /@media/i) });
+    else if (key === 'gmail') partial.push({ feature: 'media queries (ignored in Gmail app)', location: locate(allCss, /@media/i) });
+  }
+  if (/border-radius/i.test(allCss) && key === 'outlook') {
+    partial.push({ feature: 'border-radius', location: locate(allCss, /border-radius/i) });
+  }
+  if (/background-image/i.test(allCss) && (key === 'outlook' || key === 'gmail')) {
+    partial.push({ feature: 'background images', location: locate(allCss, /background-image/i) });
+  }
+  if (/^data:/i.test(generatedHtml) === false) {
+    /* skip */
+  }
+  const cheerio = require('cheerio');
+  const $ = cheerio.load(generatedHtml || '', { decodeEntities: false });
+  const dataUri = $('img').toArray().some((el) => /^data:/i.test($(el).attr('src') || ''));
+  if (dataUri && key === 'gmail') unsupported.push({ feature: 'data URI images', location: locate(generatedHtml, /src=["']data:/i) });
+  let status = 'supported';
+  if (unsupported.length) status = 'unsupported';
+  else if (partial.length) status = 'partial';
+  return { status, unsupported, partial };
+}
+
 function analyze(generatedHtml, sourceCss) {
   const results = [];
-  const ok = (msg) => results.push({ level: 'ok', message: msg });
-  const warn = (msg, detail) => results.push({ level: 'warn', message: msg, detail });
-  const info = (msg, detail) => results.push({ level: 'info', message: msg, detail });
+  const ok = (msg, loc) => results.push({ level: 'ok', message: msg, location: loc || null });
+  const warn = (msg, detail, loc) => results.push({ level: 'warn', message: msg, detail, location: loc || null });
+  const info = (msg, detail, loc) => results.push({ level: 'info', message: msg, detail, location: loc || null });
 
   const $ = cheerio.load(generatedHtml || '', { decodeEntities: false });
   const allCss = [String(sourceCss || ''), $('style').text()].join('\n');
@@ -128,7 +166,15 @@ function analyze(generatedHtml, sourceCss) {
     info('Media queries exist without a max-width container', 'Pair media queries with a container that has a width in px or %');
   }
 
-  return { results, clients: CLIENT_GUIDANCE };
+  const clientResults = {};
+  for (const key of Object.keys(CLIENT_GUIDANCE)) {
+    clientResults[key] = {
+      ...CLIENT_GUIDANCE[key],
+      ...clientStatus(key, generatedHtml, allCss),
+    };
+  }
+
+  return { results, clients: clientResults };
 }
 
 module.exports = { analyze };

@@ -1,6 +1,6 @@
-import { el, clear, toast, timeAgo, escapeHtml } from '../ui.js';
+import { el, clear } from '../ui.js';
 import { api } from '../api.js';
-import { state, set } from '../state.js';
+import { state } from '../state.js';
 
 let projectListEl = null;
 
@@ -14,28 +14,32 @@ export function renderSidebar() {
   newBtn.addEventListener('click', () => newProjectDialog());
 
   const projectsSection = el('div', { class: 'sidebar-section-title', text: 'Projects' });
-  projectListEl = el('div', { class: 'sidebar-nav' });
+  projectListEl = el('div', { class: 'sidebar-nav sidebar-projects' });
   const navProjects = el('button', { class: 'nav-item', 'data-view': 'projects', onclick: () => { location.hash = '#projects'; } }, [
-    el('span', { class: 'nav-icon', text: '≡' }),
+    el('span', { class: 'nav-icon', text: '#' }),
     el('span', { text: 'All projects' }),
-    el('span', { class: 'nav-count', text: String(state.projects.length) }),
+    el('span', { class: 'nav-count', text: String((state.projects || []).length) }),
   ]);
   renderProjectList();
 
   const lib = el('button', { class: 'nav-item', 'data-view': 'templates', onclick: () => { location.hash = '#templates'; } }, [
-    el('span', { class: 'nav-icon', text: '▤' }),
+    el('span', { class: 'nav-icon', text: 'T' }),
     el('span', { text: 'Templates' }),
   ]);
   const assets = el('button', { class: 'nav-item', 'data-view': 'assets', onclick: () => { location.hash = '#assets'; } }, [
-    el('span', { class: 'nav-icon', text: '◫' }),
+    el('span', { class: 'nav-icon', text: 'A' }),
     el('span', { text: 'Assets' }),
   ]);
+  const contacts = el('button', { class: 'nav-item', 'data-view': 'contacts', onclick: () => { location.hash = '#contacts'; } }, [
+    el('span', { class: 'nav-icon', text: 'C' }),
+    el('span', { text: 'Contacts' }),
+  ]);
   const history = el('button', { class: 'nav-item', 'data-view': 'history', onclick: () => { location.hash = '#history'; } }, [
-    el('span', { class: 'nav-icon', text: '↺' }),
+    el('span', { class: 'nav-icon', text: 'H' }),
     el('span', { text: 'History' }),
   ]);
   const settings = el('button', { class: 'nav-item', 'data-view': 'settings', onclick: () => { location.hash = '#settings'; } }, [
-    el('span', { class: 'nav-icon', text: '⚙' }),
+    el('span', { class: 'nav-icon', text: 'S' }),
     el('span', { text: 'Settings' }),
   ]);
 
@@ -49,6 +53,7 @@ export function renderSidebar() {
     librarySection,
     lib,
     assets,
+    contacts,
     history,
     settings,
   ]);
@@ -58,7 +63,7 @@ export function renderSidebar() {
     el('div', { class: 'user-row' }, [
       el('div', { class: 'avatar', text: username.slice(0, 1).toUpperCase() }),
       el('span', { text: username }),
-      el('button', { class: 'logout', title: 'Sign out', text: '⏻', onclick: () => logout() }),
+      el('button', { class: 'logout', title: 'Sign out', text: 'Out', onclick: () => logout() }),
     ]),
   ]);
 
@@ -68,10 +73,15 @@ export function renderSidebar() {
 function renderProjectList() {
   if (!projectListEl) return;
   clear(projectListEl);
-  const items = state.projects.slice(0, 200);
+  const items = (state.projects || []).filter((p) => !p.trashed && !p.archived).slice(0, 200);
   for (const p of items) {
-    const name = el('span', { text: p.name });
-    const btn = el('button', { class: 'nav-item' + (state.project && state.project.id === p.id ? ' active' : ''), 'data-view': 'workspace', onclick: () => { location.hash = `#workspace/${p.id}`; } }, [name]);
+    const name = el('span', { text: (p.favorite ? '* ' : '') + p.name });
+    const btn = el('button', {
+      class: 'nav-item' + (state.project && state.project.id === p.id ? ' active' : ''),
+      'data-view': 'workspace',
+      'data-id': p.id,
+      onclick: () => { location.hash = `#workspace/${p.id}`; },
+    }, [name]);
     btn.title = p.name;
     projectListEl.append(btn);
   }
@@ -149,7 +159,6 @@ async function logout() {
   location.reload();
 }
 
-
 export function setNavActive(view) {
   if (!projectListEl) return;
   const sidebar = projectListEl.closest('.sidebar');
@@ -157,10 +166,9 @@ export function setNavActive(view) {
   sidebar.querySelectorAll('.nav-item[data-view]').forEach((n) => {
     n.classList.toggle('active', n.getAttribute('data-view') === view);
   });
-  // Keep the matching project item highlighted inside the workspace.
-  if (view === 'workspace') {
+  if (view === 'workspace' && state.project) {
     sidebar.querySelectorAll('.nav-item[data-view="workspace"]').forEach((n) => {
-      n.classList.toggle('active', !state.project || n.textContent.trim() === state.project.name);
+      n.classList.toggle('active', n.getAttribute('data-id') === state.project.id);
     });
   }
 }

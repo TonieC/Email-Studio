@@ -19,9 +19,30 @@ const EXT_BY_MIME = {
   'image/vnd.microsoft.icon': 'ico',
 };
 
+function usageCounts() {
+  const rows = db.prepare('SELECT html FROM projects').all();
+  const counts = {};
+  const re = /\/api\/assets\/([0-9a-f-]{8,36})\/file/g;
+  for (const row of rows) {
+    let m;
+    const html = String(row.html || '');
+    while ((m = re.exec(html)) !== null) {
+      counts[m[1]] = (counts[m[1]] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
 function list() {
-  return db.prepare('SELECT id, original_name, mime, size, created_at FROM assets ORDER BY created_at DESC').all()
-    .map((a) => ({ ...a, url: `/api/assets/${a.id}/file` }));
+  const used = usageCounts();
+  return db.prepare('SELECT id, original_name, mime, size, created_at, width, height FROM assets ORDER BY created_at DESC').all()
+    .map((a) => ({
+      ...a,
+      url: `/api/assets/${a.id}/file`,
+      usage: used[a.id] || 0,
+      unused: !(used[a.id]),
+      oversized: a.size > 500 * 1024 || (a.width && a.width > 1200),
+    }));
 }
 
 function get(id) {
@@ -49,10 +70,30 @@ function create(file) {
   const id = crypto.randomUUID();
   const storedName = `${id}.${ext}`;
   fs.mkdirSync(assetsDir, { recursive: true });
-  fs.copyFileSync(file.path, path.join(assetsDir, storedName));
+  const dest = path.join(assetsDir, storedName);
+  fs.copyFileSync(file.path, dest);
+  const ImageProcessService = require('./ImageProcessService');
+  const dim = ImageProcessService.readDimensions(dest);
   const now = Date.now();
-  db.prepare('INSERT INTO assets (id, original_name, stored_name, mime, size, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(id, String(file.originalname || 'asset').slice(0, 255), storedName, file.mimetype, file.size, now);
+  db.prepare('INSERT INTO assets (id, original_name, stored_name, mime, size, created_at, width, height) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, String(file.originalname || 'asset').slice(0, 255), storedName, file.mimetype, file.size, now, dim.width, dim.height);
+  return get(id);
+}
+
+function replace(id, file) {
+  const row = get(id);
+  if (!row) return null;
+  const ext = validateMime(file.mimetype);
+  const storedName = `${id}.${ext}`;
+  const dest = path.join(assetsDir, storedName);
+  fs.copyFileSync(file.path, dest);
+  if (row.stored_name !== storedName) {
+    try { fs.unlinkSync(path.join(assetsDir, row.stored_name)); } catch (_) { /* ignore */ }
+  }
+  const ImageProcessService = require('./ImageProcessService');
+  const dim = ImageProcessService.readDimensions(dest);
+  db.prepare('UPDATE assets SET original_name = ?, stored_name = ?, mime = ?, size = ?, width = ?, height = ? WHERE id = ?')
+    .run(String(file.originalname || row.original_name).slice(0, 255), storedName, file.mimetype, file.size, dim.width, dim.height, id);
   return get(id);
 }
 
@@ -84,4 +125,4 @@ function readStream(id) {
   return { row, stream: fs.createReadStream(filePath) };
 }
 
-module.exports = { list, get, create, rename, remove, readStream };
+module.exports = { list, get, create, rename, remove, readStream, replace, usageCounts };

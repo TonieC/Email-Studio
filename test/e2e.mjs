@@ -241,6 +241,72 @@ async function run() {
   assert.equal(r.status, 201, 'use template creates project');
   const tpProject = r.data.project;
 
+  // Folders + bulk
+  r = await req('POST', '/api/folders', { name: 'Campaigns' });
+  assert.equal(r.status, 201, 'create folder');
+  const folder = r.data.folder;
+  r = await req('POST', '/api/projects/bulk', { ids: [project.id], action: 'move', folderId: folder.id });
+  assert.equal(r.status, 200);
+  r = await req('GET', `/api/projects?folderId=${folder.id}`);
+  assert.ok(r.data.projects.some((p) => p.id === project.id));
+  r = await req('POST', '/api/projects/bulk', { ids: [project.id], action: 'favorite' });
+  assert.equal(r.status, 200);
+
+  // Contacts + merge
+  r = await req('POST', '/api/contacts', { email: 'ada@example.com', first_name: 'Ada', last_name: 'Lovelace', tags: ['vip'] });
+  assert.equal(r.status, 201, 'create contact');
+  const contact = r.data.contact;
+  r = await req('POST', '/api/contacts/preview', { contactId: contact.id, html: '<p>Hi {{first_name}}</p>' });
+  assert.match(r.data.html, /Hi Ada/);
+  r = await req('POST', '/api/contacts/import', { csv: 'email,first_name\nbad-email,Nope\nok@example.com,Ok' });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.imported, 1);
+
+  // Import HTML
+  r = await req('POST', '/api/projects/import', { name: 'Imported', html: '<html><head><style>p{color:blue}</style></head><body><p onclick="x()">Hello</p><script>bad()</script></body></html>' });
+  assert.equal(r.status, 201, 'import project');
+  assert.ok(!/script/i.test(r.data.project.html));
+
+  // Email doctor
+  r = await req('POST', '/api/convert/doctor', { html: '<html><body><img src="x"><script>alert(1)</script></body></html>', css: '' });
+  assert.equal(r.status, 200);
+  assert.ok(r.data.findings.some((f) => f.code === 'script'));
+  r = await req('POST', '/api/convert/doctor/fix', { html: '<html><body><img src="x"></body></html>', css: '' });
+  assert.ok(r.data.applied.includes('alt') || r.data.html.includes('alt='));
+
+  // API keys skip CSRF for /api/v1
+  r = await req('POST', '/api/keys', { name: 'e2e' });
+  assert.equal(r.status, 201);
+  const apiKey = r.data.key.key;
+  assert.match(apiKey, /^es_/);
+  const savedCsrf2 = csrf;
+  csrf = '';
+  r = await fetch(BASE + '/api/v1/projects', {
+    method: 'GET',
+    headers: { Authorization: 'Bearer ' + apiKey },
+  });
+  assert.equal(r.status, 200, 'api key authenticates GET /api/v1/projects');
+  r = await fetch(BASE + '/api/v1/projects', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'API project' }),
+  });
+  assert.equal(r.status, 201, 'api key POST skips CSRF');
+  r = await fetch(BASE + '/api/v1/projects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'no auth' }),
+  });
+  assert.ok(r.status === 401 || r.status === 403, 'v1 without session or key is blocked');
+  csrf = savedCsrf2;
+
+  // Webhooks reject private URLs
+  r = await req('POST', '/api/webhooks', { url: 'http://127.0.0.1/hook', events: ['send.success'] });
+  assert.equal(r.status, 400, 'localhost webhook rejected');
+  r = await req('POST', '/api/webhooks', { url: 'https://example.com/hooks/email', events: ['send.success'] });
+  assert.equal(r.status, 201, 'https webhook accepted');
+  assert.ok(r.data.webhook.secret, 'webhook secret returned once');
+
   // Settings
   r = await req('PUT', '/api/settings', { appName: 'Test Studio', publicBaseUrl: 'https://emails.example.com' });
   assert.equal(r.status, 200);

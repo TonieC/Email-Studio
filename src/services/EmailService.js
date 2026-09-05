@@ -52,7 +52,7 @@ async function buildTransporter(account) {
   throw err;
 }
 
-async function send({ accountId, to, cc, bcc, subject, from, html, kind = 'email' }) {
+async function send({ accountId, to, cc, bcc, subject, from, html, kind = 'email', replyTo, text }) {
   const account = AccountService.getConfig(accountId);
   if (!account) {
     const err = new Error('Email account not found');
@@ -75,6 +75,8 @@ async function send({ accountId, to, cc, bcc, subject, from, html, kind = 'email
   if (cc) mail.cc = cc;
   if (bcc) mail.bcc = bcc;
   if (html) mail.html = html;
+  if (text) mail.text = text;
+  if (replyTo) mail.replyTo = replyTo;
 
   const info = await transporter.sendMail(mail);
   return {

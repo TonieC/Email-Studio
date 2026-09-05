@@ -14,6 +14,7 @@ router.get('/', (req, res) => {
     sendDefaults: SettingsService.getSendDefaults(),
     storage: StorageService.usage(),
     limits: { maxUploadBytes: require('../config').maxUploadBytes },
+    trackingEnabled: !!SettingsService.get('tracking_enabled', false),
   });
 });
 
@@ -26,6 +27,7 @@ router.put('/', (req, res, next) => {
       ['inlineAssets', 'inline_assets', (v) => !!v],
       ['fromAddress', 'from_address', (v) => String(v || '').trim().slice(0, 300)],
       ['defaultAccountId', 'default_account_id', (v) => String(v || '').slice(0, 64)],
+      ['trackingEnabled', 'tracking_enabled', (v) => !!v],
     ];
     for (const [field, key, normalize] of allowed) {
       if (body[field] !== undefined) SettingsService.set(key, normalize(body[field]));

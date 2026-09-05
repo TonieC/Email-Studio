@@ -8,9 +8,10 @@ import { renderProjects } from './views/projects.js';
 import { renderTemplates } from './views/templates.js';
 import { renderAssets } from './views/assets.js';
 import { renderHistory } from './views/history.js';
+import { renderContacts } from './views/contacts.js';
 import { renderSettings } from './views/settings.js';
 import { renderWorkspace, teardownWorkspace } from './views/workspace.js';
-import { loadProjects, loadAccounts, loadAssets, loadTemplates, loadSettings, loadHistory } from './actions.js';
+import { loadProjects, loadAccounts, loadAssets, loadTemplates, loadSettings, loadHistory, loadContacts } from './actions.js';
 
 const root = () => document.getElementById('app');
 
@@ -40,8 +41,7 @@ async function route() {
   set({ view: path || 'projects', selectedElement: null });
 
   if (path === 'projects') {
-    await loadProjects();
-    renderProjects();
+    await renderProjects();
   } else if (path === 'workspace') {
     await openWorkspace(id);
   } else if (path === 'templates') {
@@ -53,6 +53,9 @@ async function route() {
   } else if (path === 'history') {
     await loadHistory();
     renderHistory();
+  } else if (path === 'contacts') {
+    await loadContacts();
+    renderContacts();
   } else if (path === 'settings') {
     await loadAccounts();
     await loadSettings();
@@ -112,7 +115,7 @@ async function init() {
   }
 
   try {
-    await Promise.all([loadProjects(), loadAccounts(), loadAssets(), loadTemplates(), loadSettings(), loadHistory()]);
+    await Promise.all([loadProjects(), loadAccounts(), loadAssets(), loadTemplates(), loadSettings(), loadHistory(), loadContacts()]);
   } catch (e) {
     toast(`Failed to load data: ${e.message}`, 'error');
   }
